@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>一日一問！知財クイズ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+        .calendar-grid {
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+        }
+        .day {
+            min-height: 60px;
+        }
+        .day-name {
+            height: 30px;
+        }
+        /* アニメーション */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        /* 正解時の紙吹雪アニメーション */
+        .confetti-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 10;
+        }
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #f00;
+            opacity: 0.7;
+            animation: fall 3s linear infinite;
+        }
+        @keyframes fall {
+            to {
+                transform: translateY(100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 max-w-2xl">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-indigo-600">一日一問！知財クイズ</h1>
+            <p class="text-gray-500 mt-2">毎日挑戦して、知財のプロフェッショナルを目指そう！</p>
+        </header>
+
+        <!-- 正答率表示 -->
+        <div id="stats-container" class="bg-white p-4 rounded-lg shadow-md mb-6 text-center">
+            <h2 class="text-xl font-bold mb-2">学習進捗</h2>
+            <p class="text-lg">総正答率: <span id="total-accuracy" class="font-bold text-indigo-600">--%</span> (<span id="correct-count">0</span>/<span id="total-answered">0</span> 問)</p>
+            <button id="show-chart-btn" class="mt-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-full transition duration-300">
+                詳細グラフを見る
+            </button>
+        </div>
+
+        <!-- カレンダー -->
+        <div class="bg-white p-4 sm:p-6 rounded-lg shadow-lg mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <button id="prev-month" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold p-2 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <h2 id="month-year" class="text-xl sm:text-2xl font-bold"></h2>
+                <button id="next-month" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold p-2 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                </button>
+            </div>
+            <div class="grid calendar-grid text-center font-bold text-gray-600">
+                <div class="day-name">日</div>
+                <div class="day-name">月</div>
+                <div class="day-name">火</div>
+                <div class="day-name">水</div>
+                <div class="day-name">木</div>
+                <div class="day-name">金</div>
+                <div class="day-name">土</div>
+            </div>
+            <div id="calendar-body" class="grid calendar-grid"></div>
+        </div>
+
+        <!-- クイズ表示エリア -->
+        <div id="quiz-container" class="bg-white p-6 rounded-lg shadow-lg relative min-h-[300px]">
+            <!-- クイズ内容がここに挿入される -->
+        </div>
+    </div>
+
+    <!-- グラフモーダル -->
+    <div id="chart-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-auto p-6 relative">
+            <button id="close-chart-modal" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h2 class="text-2xl font-bold text-center mb-4">正答率詳細</h2>
+            <div class="flex flex-col md:flex-row justify-around items-center gap-4">
+                <div>
+                    <h3 class="text-lg font-semibold text-center">分野別</h3>
+                    <canvas id="category-chart" width="200" height="200"></canvas>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-center">難易度別</h3>
+                    <canvas id="difficulty-chart" width="200" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const quizData = [
+            // --- 過去問 (約1ヶ月分) ---
+            { date: '2025-08-19', category: '特許関係法規', difficulty: '中級', question: '特許法における「新規性喪失の例外」の適用を受けるための手続で、最も重要なものは次のうちどれか？', options: ['特許庁長官に事前に相談する', '発明を公開した日から1年以内に特許出願する', '発明を公開した事実を隠蔽する', '外国で先に出願しておく'], answer: 1, explanation: '発明の新規性喪失の例外（グレースピリオド）の適用を受けるには、発明を公開した日から1年以内に特許出願し、所定の手続きを行う必要があります。この期間が最も重要な要件です。' },
+            { date: '2025-08-20', category: 'コンテンツ保護', difficulty: '初級', question: '自分で撮影した風景写真。この写真に発生する権利は何か？', options: ['特許権', '商標権', '著作権', '実用新案権'], answer: 2, explanation: '写真、文章、音楽などの創作物には著作権が発生します。創作した時点で自動的に発生し、登録は不要です。' },
+            { date: '2025-08-21', category: 'ブランド保護', difficulty: '中級', question: '他人が登録している商標と同一のロゴを、無断で自社商品のパッケージに使用した場合、何という権利の侵害になるか？', options: ['著作権侵害', '特許権侵害', '商標権侵害', '意匠権侵害'], answer: 2, explanation: '登録された商標を無断で使用する行為は商標権侵害となります。商標は、商品やサービスの出所を識別するための標識を保護するものです。' },
+            { date: '2025-08-22', category: '国内権利化', difficulty: '上級', question: '特許出願の審査において、拒絶理由通知を受け取った出願人が取りうる対応として、適切でないものはどれか？', options: ['意見書を提出して反論する', '手続補正書を提出して請求項を補正する', '分割出願を行う', '審判請求をせずに再出願する'], answer: 3, explanation: '拒絶理由通知に対しては、意見書や手続補正書を提出して応答します。また、一部を分割出願することも可能です。しかし、応答せずに放置し、拒絶査定後に再出願しても、先の出願を理由に新規性・進歩性が否定される可能性が高いです。' },
+            { date: '2025-08-23', category: 'デザイン保護', difficulty: '初級', question: '製品の独自のデザインを保護するための権利は何か？', options: ['特許権', '意匠権', '商標権', '著作権'], answer: 1, explanation: '意匠権は、製品の形状、模様、色彩などのデザインを保護する権利です。これにより、デザインの模倣を防ぐことができます。' },
+            { date: '2025-08-24', category: '調査', difficulty: '初級', question: '特許情報を検索できる無料のデータベースで、特許庁が提供しているものは何か？', options: ['Google Patents', 'J-PlatPat（特許情報プラットフォーム）', 'WIPO Launch', 'Espacenet'], answer: 1, explanation: 'J-PlatPat（特許情報プラットフォーム）は、日本の特許庁が提供する無料のデータベースで、特許・実用新案、意匠、商標の検索が可能です。' },
+            { date: '2025-08-25', category: '契約', difficulty: '中級', question: 'ソフトウェアの使用許諾契約のことをアルファベット4文字で何というか？', options: ['NDA', 'OEM', 'EULA', 'SLA'], answer: 2, explanation: 'EULAはEnd-User License Agreementの略で、エンドユーザーライセンス契約（ソフトウェア使用許諾契約）を指します。ソフトウェアの利用者が遵守すべき事項が定められています。' },
+            { date: '2025-08-26', category: 'エンフォースメント', difficulty: '中級', question: '特許権侵害訴訟において、権利侵害の差止めと共に請求できることが多いものは何か？', options: ['謝罪広告の掲載', '損害賠償', '侵害者の逮捕', '営業停止命令'], answer: 1, explanation: '特許権侵害訴訟では、侵害行為の差止請求とともに、侵害によって受けた損害の賠償を請求することが一般的です。' },
+            { date: '2025-08-27', category: '特許関係法規', difficulty: '上級', question: '特許を受ける権利は、いつから発生するか？', options: ['発明が完成した時', '特許出願した時', '特許査定された時', '特許料を納付した時'], answer: 0, explanation: '特許を受ける権利は、法人による職務発明などの例外を除き、発明が完成したと同時に発明者に原始的に帰属します。この権利を特許庁に出願することで、特許権の取得を目指します。' },
+            { date: '2025-08-28', category: 'ブランド保護', difficulty: '初級', question: '商品の出所を示すために使用されるマーク（文字や図形など）を保護する権利は？', options: ['著作権', '意匠権', '特許権', '商標権'], answer: 3, explanation: '商標権は、商品やサービスに使用するマーク（商標）を保護する権利です。他人の商品と区別し、品質を保証する役割などを持ちます。' },
+            { date: '2025-08-29', category: '外国権利化', difficulty: '中級', question: '日本で特許出願した後、1年以内に同じ発明を外国に出願する際に主張できる権利は？', options: ['国内優先権', 'パリ条約による優先権', '出願変更権', '先願主義'], answer: 1, explanation: 'パリ条約による優先権を主張することで、第一国（日本）への出願日を基準に、他の加盟国での新規性・進歩性などが判断されます。これにより、1年間の猶予期間中に安心して外国出願の準備ができます。' },
+            { date: '2025-08-30', category: 'コンテンツ保護', difficulty: '中級', question: '著作権の保護期間は、原則として著作者の死後何年間か？', options: ['20年間', '50年間', '70年間', '永久'], answer: 2, explanation: '日本の著作権法では、著作権の保護期間は原則として著作者の死後70年間です。（2018年の法改正で50年から70年に延長されました）' },
+            { date: '2025-08-31', category: 'リスクマネジメント', difficulty: '初級', question: '会社の従業員が業務上で行った発明を何というか？', options: ['個人発明', '共同発明', '職務発明', '自由発明'], answer: 2, explanation: '職務発明は、従業員がその性質上会社の業務範囲に属し、かつ、その発明をするに至った行為が会社における現在の又は過去の職務に属する発明を指します。' },
+            { date: '2025-09-01', category: '戦略', difficulty: '中級', question: '自社では実施しない特許を他社にライセンスして収益を得ることを主目的とする企業を何と呼ぶか？', options: ['メーカー', 'コンサルティングファーム', 'パテントトロール', 'ベンチャーキャピタル'], answer: 2, explanation: 'パテントトロール（またはNPE: Non-Practicing Entity）は、自らは発明を実施せず、取得した特許権を元に他社からライセンス料や賠償金を得る事業者を指します。文脈によっては否定的な意味で使われることもあります。' },
+            { date: '2025-09-02', category: '技術保護', difficulty: '中級', question: '発明を特許で保護する代わりに、あえて公開せず秘密にしておく技術管理の手法を何というか？', options: ['営業秘密（ノウハウ）としての秘匿', '技術供与', 'オープンイノベーション', 'クロスライセンス'], answer: 0, explanation: 'すべての技術を特許出願するのではなく、製造方法など外部から見破られにくい技術を営業秘密（ノウハウ）として管理することも、有力な技術保護の手段です。不正競争防止法で保護されます。' },
+            { date: '2025-09-03', category: 'デザイン保護', difficulty: '中級', question: '複数の意匠をまとめて一つの出願で手続きできる制度を何というか？', options: ['分割出願', '複数意匠登録出願', '団体商標', '関連意匠'], answer: 1, explanation: '複数意匠登録出願は、一定の条件下で、複数の意匠を一つの願書でまとめて出願できる制度です。手続きの簡素化や費用の削減に繋がります。' },
+            { date: '2025-09-04', category: '価値評価', difficulty: '初級', question: '知的財産の価値を評価する必要が生じるのは、どのような場面か？', options: ['毎年の確定申告', '従業員の採用', 'M&A（企業の合併・買収）や資金調達', '新製品のプレスリリース'], answer: 2, explanation: 'M&A、事業譲渡、知的財産担保融資などの場面で、企業が保有する特許などの知的財産の金銭的な価値を評価する必要が生じます。' },
+            { date: '2025-09-05', category: '国内権利化', difficulty: '中級', question: '特許出願が公開されるのは、原則として出願日から何年経過後か？', options: ['1年', '1年6ヶ月', '2年', '3年'], answer: 1, explanation: '特許出願は、出願日から1年6ヶ月が経過すると、その内容が「公開特許公報」によって自動的に公開されます（出願公開制度）。これにより、誰でもその技術内容を知ることができます。' },
+            { date: '2025-09-06', category: '法務', difficulty: '上級', question: '他人の著作物を引用する際の要件として、著作権法上、適切でないものはどれか？', options: ['引用部分が主従関係の「従」であること', '引用部分を改変しないこと', '出所を明示すること', '著作者に許諾を得ること'], answer: 3, explanation: '著作権法第32条で定められた適法な引用の要件を満たせば、著作者の許諾なく著作物を利用できます。許諾を得ることは引用の要件ではありません。主従関係、明瞭区別、出所の明示などが要件となります。' },
+            { date: '2025-09-07', category: '管理', difficulty: '中級', question: '特許権を維持するために、毎年特許庁に支払う必要がある料金を何というか？', options: ['出願手数料', '審査請求料', '特許料（年金）', '印紙税'], answer: 2, explanation: '特許権を維持するためには、登録後、毎年「特許料（年金）」を納付する必要があります。これを怠ると、権利が消滅してしまいます。' },
+            { date: '2025-09-08', category: 'エンフォースメント', difficulty: '上級', question: '税関が知的財産侵害物品の輸出入を差し止める制度を何というか？', options: ['司法差止', '行政差止', '輸入差止', '水際取締制度'], answer: 3, explanation: '水際取締制度は、税関が特許権、商標権、著作権などの知的財産を侵害する物品の輸出入を差し止める制度です。権利者が事前に輸入差止申立てを行うことで、効果的に模倣品などの流入を防げます。' },
+            { date: '2025-09-09', category: '特許関係法規', difficulty: '初級', question: '同じ発明について複数の出願があった場合、誰が特許を受けられるかを定める主義は？', options: ['発明者主義', '先願主義', '審査主義', '登録主義'], answer: 1, explanation: '日本の特許法では、同じ発明について複数の出願があった場合、最も早く出願した者に特許権を与える「先願主義」が採用されています。' },
+            { date: '2025-09-10', category: 'コンテンツ保護', difficulty: '上級', question: 'Webサイトから無断で文章をコピー＆ペーストして自社のブログに掲載する行為。どの権利の侵害の可能性があるか？', options: ['複製権および公衆送信権', '氏名表示権', '同一性保持権', '譲渡権'], answer: 0, explanation: '他人の著作物である文章を無断でコピー（複製）し、インターネット上で公開（公衆送信）する行為は、著作権の支分権である「複製権」と「公衆送信権」の侵害に該当する可能性が非常に高いです。' },
+            { date: '2025-09-11', category: 'ブランド保護', difficulty: '中級', question: '登録された商標を継続して3年以上使用していない場合、どうなる可能性があるか？', options: ['権利が自動的に消滅する', '更新登録ができなくなる', '第三者から不使用取消審判を請求される', '使用料を請求される'], answer: 2, explanation: '正当な理由なく継続して3年以上、登録商標を使用していない場合、誰でもその登録の取消しを求める審判（不使用取消審判）を請求することができます。' },
+            { date: '2025-09-12', category: 'デザイン保護', difficulty: '上級', question: '物品の「部分」のデザインについても保護を受けられる意匠制度は？', options: ['関連意匠', '秘密意匠', '部分意匠', '組物の意匠'], answer: 2, explanation: '部分意匠制度は、物品全体のデザインではなく、特徴的な一部分のデザインについて意匠権を取得できる制度です。デザインの要点を的確に保護することができます。' },
+            { date: '2025-09-13', category: '契約', difficulty: '上級', question: '共同で発明を行った場合、特許を受ける権利はどのように帰属するか？', options: ['発明への貢献度が最も高い者が単独で保有', '各発明者が均等な持分で共有', '会社がすべての権利を保有', '最初に出願手続きをした者が保有'], answer: 1, explanation: '共同で発明をした場合、特許を受ける権利は共同発明者全員が共有します。持分割合は、特に取り決めがなければ均等と推定されますが、貢献度に応じて定めることも可能です。' },
+            { date: '2025-09-14', category: '調査', difficulty: '中級', question: '特許分類の一種で、国際的に共通で用いられている分類を何というか？', options: ['FI（ファイルインデックス）', 'Fターム', 'IPC（国際特許分類）', 'USPC（米国特許分類）'], answer: 2, explanation: 'IPC（国際特許分類）は、世界共通の特許分類であり、技術内容に応じて階層的に分類されています。外国の特許文献を調査する際などに非常に重要です。' },
+            { date: '2025-09-15', category: '契約', difficulty: '中級', question: '秘密保持契約（NDA）を締結する主な目的は何か？', options: ['発明のアイデアを共同で開発するため', 'ライセンス料を決定するため', '開示された秘密情報を保護するため', '特許出願を代行してもらうため'], answer: 2, explanation: '秘密保持契約（NDA）は、取引の検討などの際に一方から他方へ開示される営業秘密や個人情報などの秘密情報を、目的外に使用されたり、第三者に漏洩されたりすることを防ぐために締結されます。' },
+            { date: '2025-09-16', category: '調査', difficulty: '中級', question: '新しい技術を開発する前に、類似の技術が既に特許として存在しないか調べることを何というか？', options: ['市場調査', '先行技術調査', '信用調査', 'デザイン調査'], answer: 1, explanation: '先行技術調査は、特許出願前に、自社の発明に関連する技術が既に公開されていないか（公知になっていないか）を調査することです。これにより、特許取得の可能性を判断し、重複開発を防ぎます。' },
+            { date: '2025-09-17', category: '価値評価', difficulty: '上級', question: '特許の価値評価手法の一つである「インカムアプローチ」とは、どのような考え方に基づくものか？', options: ['特許の取得にかかった費用から価値を算出する', '類似の特許の取引価格から価値を類推する', '特許が生み出す将来のキャッシュフローから価値を算出する', '専門家の直感に基づいて価値を決定する'], answer: 2, explanation: 'インカムアプローチは、評価対象の知的財産が将来生み出すと予測される利益やキャッシュフローを現在価値に割り引いて評価する手法です。' },
+            // --- 今日の問題 ---
+            { date: '2025-09-18', category: '技術保護', difficulty: '初級', question: '発明を保護するための最も代表的な権利は何か？', options: ['著作権', '意匠権', '特許権', '商標権'], answer: 2, explanation: '特許権は、新しい技術的なアイデア、すなわち「発明」を保護するための権利です。特許庁に出願し、審査を経て登録されることで権利が発生します。' },
+            // --- 未来の問題 (約1ヶ月分) ---
+            { date: '2025-09-19', category: 'エンフォースメント', difficulty: '中級', question: '自社の特許権を侵害された場合、まず検討すべき法的措置はどれか？', options: ['刑事告訴', '警告状の送付', '公正取引委員会への申告', '新聞広告での抗議'], answer: 1, explanation: '特許権侵害を発見した場合、まずは侵害者に侵害の事実を伝え、行為の停止を求める「警告状」を送付するのが一般的です。これにより、交渉による解決の道が開かれることがあります。' },
+            { date: '2025-09-20', category: '外国権利化', difficulty: '上級', question: '複数の国で同時に特許を取得したい場合に利用できる国際的な出願制度は何か？', options: ['マドリッド協定議定書', 'ハーグ協定', '特許協力条約（PCT）', 'ベルヌ条約'], answer: 2, explanation: '特許協力条約（PCT）は、一つの出願手続きで多数の加盟国に対して同時に特許出願したことと同じ効果を得られる制度です。これにより、各国への移行手続きを猶予しながら、権利化の可能性を探ることができます。' },
+            { date: '2025-09-21', category: '法務', difficulty: '初級', question: '知的財産権を総称して「知財」と呼ぶことがある。この「知財」に含まれないものはどれか？', options: ['発明', '会社のロゴマーク', '土地の所有権', '小説のストーリー'], answer: 2, explanation: '土地の所有権は不動産に関する権利であり、人間の知的創造活動によって生み出されるものを保護対象とする知的財産権には含まれません。' },
+            { date: '2025-09-22', category: 'リスクマネジメント', difficulty: '中級', question: '他社の特許権を侵害していないかを確認し、侵害リスクを回避するための調査を何というか？', options: ['侵害予防調査（クリアランス調査）', '有効性調査', '公知例調査', '動向調査'], answer: 0, explanation: '侵害予防調査（クリアランス調査）は、自社製品が他社の有効な特許権を侵害していないかを確認するために行う調査です。製品の製造・販売前に実施することで、将来の紛争リスクを低減できます。' },
+            { date: '2025-09-23', category: 'ブランド保護', difficulty: '上級', question: '地域団体商標として登録が認められるためには、どのような要件が必要か？', options: ['全国的に有名であること', '事業協同組合等の団体が出願人であること', '商品が農産物であること', '3人以上の共同出願であること'], answer: 1, explanation: '地域団体商標は、事業協同組合や商工会などの団体が、その構成員に使用させるための商標です。地域の名称と商品・役務の名称からなるなど、一定の要件を満たす必要があります。' },
+            { date: '2025-09-24', category: 'デザイン保護', difficulty: '中級', question: '意匠の国際登録制度を定めた国際条約は何か？', options: ['パリ条約', 'TRIPS協定', 'ジェネーブ改正協定（ハーグ協定）', '特許法条約'], answer: 2, explanation: 'ハーグ協定のジェネーブ改正協定は、意匠の国際登録制度を定めており、一つの手続で複数の締約国の意匠権を確保できる可能性があります。' },
+            { date: '2025-09-25', category: 'コンテンツ保護', difficulty: '上級', question: '著作権法で保護される「プログラムの著作物」。これに該当しないものはどれか？', options: ['ソースコード', 'アルゴリズム（解法）', 'オブジェクトコード', 'システム設計書'], answer: 1, explanation: '著作権法では、プログラムにおける「表現」を保護しますが、その根底にあるアイデアや解法（アルゴリズム）自体は保護の対象外とされています。' },
+            { date: '2025-09-26', category: '管理', difficulty: '初級', question: '自社が保有する特許や商標を一覧にして管理する帳簿を一般に何と呼ぶか？', options: ['発明台帳', '顧客名簿', '知的財産管理台帳', '会計帳簿'], answer: 2, explanation: '知的財産管理台帳は、企業が保有する特許、商標、意匠などの知的財産権を一覧で管理するためのものです。権利の維持管理や戦略立案に不可欠です。' },
+            { date: '2025-09-27', category: '資金調達', difficulty: '中級', question: '特許権を担保にして金融機関から融資を受けることを何というか？', options: ['特許権譲渡', '知的財産担保融資', 'ライセンス契約', '研究開発投資'], answer: 1, explanation: '知的財産担保融資は、企業が持つ特許権や商標権などの知的財産権の価値を評価し、それを担保として行う融資のことです。A-PAT（エイパット）などの制度があります。' },
+            { date: '2025-10-15', category: '戦略', difficulty: '上級', question: '自社の事業を守るために、競合他社を牽制する目的で取得する特許網を何というか？', options: ['オープンクローズ戦略', 'パテントポートフォリオ', '防衛特許', 'パテントプール'], answer: 2, explanation: '防衛特許は、他社から特許侵害で訴えられた際に対抗手段として利用したり、他社が参入しにくい技術領域を構築したりするために取得する特許のことです。' },
+            { date: '2025-10-16', category: '契約', difficulty: '中級', question: '特許権者が他者に特許発明の実施を許諾する契約を何というか？', options: ['譲渡契約', '秘密保持契約', '実施許諾契約（ライセンス契約）', '共同開発契約'], answer: 2, explanation: '実施許諾契約（ライセンス契約）は、特許権などの知的財産権を持つ者（ライセンサー）が、他者（ライセンシー）に対して、一定の条件下でその権利の利用を許諾する契約です。' },
+            { date: '2025-10-17', category: '特許関係法規', difficulty: '初級', question: '日本の特許制度において、発明者でない者が勝手に出願する行為を何というか？', options: ['共同出願', '冒認出願', '分割出願', '優先権主張出願'], answer: 1, explanation: '冒認出願とは、発明者やその正当な承継人でない者が、無断で特許出願を行うことです。このような出願は特許を受けることができません。' },
+            { date: '2025-10-18', category: '技術保護', difficulty: '上級', question: '発明の進歩性の判断において、複数の先行技術を組み合わせて容易に発明できたと判断されないための重要な観点は何か？', options: ['発明の効果が予測できないこと', '発明の構成が複雑であること', '発明の実施に費用がかかること', '発明が長期間にわたる研究の成果であること'], answer: 0, explanation: '進歩性の判断では、当業者（その技術分野の専門家）が先行技術を組み合わせて容易に発明できたか否かが問われます。その際、組み合わせる動機付けがなかったり、組み合わせによって予測できない顕著な効果（奏功）があったりすると、進歩性が肯定されやすくなります。' },
+        ];
+        
+        // --- ここからアプリケーションのロジック ---
+        
+        const calendarBody = document.getElementById('calendar-body');
+        const monthYear = document.getElementById('month-year');
+        const prevMonthBtn = document.getElementById('prev-month');
+        const nextMonthBtn = document.getElementById('next-month');
+        const quizContainer = document.getElementById('quiz-container');
+        
+        const stats = {
+            totalAccuracy: document.getElementById('total-accuracy'),
+            correctCount: document.getElementById('correct-count'),
+            totalAnswered: document.getElementById('total-answered'),
+        };
+
+        const chartModal = document.getElementById('chart-modal');
+        const showChartBtn = document.getElementById('show-chart-btn');
+        const closeChartModalBtn = document.getElementById('close-chart-modal');
+
+        let currentDate = new Date('2025-09-18T00:00:00');
+        let today = new Date(currentDate);
+        today.setHours(0, 0, 0, 0);
+
+        let answers = JSON.parse(localStorage.getItem('ipQuizAnswers')) || {};
+        let categoryChart, difficultyChart;
+
+        const difficultyMap = { '初級': 'bg-green-200 text-green-800', '中級': 'bg-yellow-200 text-yellow-800', '上級': 'bg-red-200 text-red-800' };
+        const praiseWords = ["素晴らしい！完璧です！", "お見事！さすがですね！", "すごい！知財のプロフェッショナル！", "その通り！素晴らしい知識です！", "正解！この調子で頑張りましょう！"];
+
+        function formatDate(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function renderCalendar() {
+            calendarBody.innerHTML = '';
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+
+            monthYear.textContent = `${year}年 ${month + 1}月`;
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const lastDate = new Date(year, month + 1, 0).getDate();
+
+            for (let i = 0; i < firstDay; i++) {
+                calendarBody.innerHTML += `<div class="day"></div>`;
+            }
+
+            for (let date = 1; date <= lastDate; date++) {
+                const dateStr = formatDate(new Date(year, month, date));
+                const quiz = quizData.find(q => q.date === dateStr);
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'day flex items-center justify-center p-1 border border-gray-200 relative';
+                
+                let content = `<span class="text-sm sm:text-base">${date}</span>`;
+                let dayClass = 'cursor-pointer hover:bg-indigo-100 transition duration-200';
+                
+                if (answers[dateStr]) {
+                    dayClass += answers[dateStr].correct ? ' bg-green-300' : ' bg-red-300';
+                }
+
+                if (new Date(dateStr) > today) {
+                    dayClass = 'bg-gray-200 opacity-70 pointer-events-none';
+                } else if (!quiz) {
+                     dayClass = 'bg-gray-100 opacity-50 pointer-events-none';
+                }
+
+                if (formatDate(new Date(year, month, date)) === formatDate(today)) {
+                     content = `<span class="bg-indigo-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm sm:text-base">${date}</span>`;
+                }
+
+                dayDiv.innerHTML = content;
+                dayDiv.className += ` ${dayClass}`;
+                dayDiv.dataset.date = dateStr;
+
+                if (quiz && new Date(dateStr) <= today) {
+                    dayDiv.addEventListener('click', () => showQuiz(quiz));
+                }
+                calendarBody.appendChild(dayDiv);
+            }
+        }
+        
+        function showQuiz(quiz) {
+            quizContainer.innerHTML = `
+                <div class="confetti-container"></div>
+                <div class="fade-in">
+                    <div class="text-center mb-4">
+                        <p class="text-sm text-gray-500">${quiz.date}</p>
+                        <span class="inline-block px-3 py-1 text-sm font-semibold rounded-full ${difficultyMap[quiz.difficulty]}">${quiz.difficulty}</span>
+                        <h3 class="text-lg font-bold text-indigo-700 mt-2">${quiz.category}</h3>
+                    </div>
+                    <p class="text-lg font-semibold mb-6 text-left">${quiz.question}</p>
+                    <div id="options-container" class="space-y-3">
+                        ${quiz.options.map((option, index) => `
+                            <button data-index="${index}" class="option-btn w-full text-left p-4 rounded-lg border-2 border-gray-300 hover:bg-gray-100 hover:border-indigo-400 transition">
+                                ${option}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div id="explanation-content" class="mt-4">
+                        <!-- 解説がここに挿入される -->
+                    </div>
+                </div>`;
+
+            document.querySelectorAll('.option-btn').forEach(btn => {
+                btn.addEventListener('click', () => checkAnswer(quiz, parseInt(btn.dataset.index)));
+            });
+        }
+
+        function checkAnswer(quiz, selectedIndex) {
+            const correct = selectedIndex === quiz.answer;
+            answers[quiz.date] = { correct: correct };
+            localStorage.setItem('ipQuizAnswers', JSON.stringify(answers));
+
+            const optionsContainer = document.getElementById('options-container');
+            optionsContainer.childNodes.forEach(child => {
+                 if (child.nodeType === 1 && child.tagName === 'BUTTON') child.disabled = true;
+            });
+            
+            const selectedBtn = optionsContainer.querySelector(`[data-index="${selectedIndex}"]`);
+            const correctBtn = optionsContainer.querySelector(`[data-index="${quiz.answer}"]`);
+
+            correctBtn.classList.remove('border-gray-300', 'hover:bg-gray-100', 'hover:border-indigo-400');
+            correctBtn.classList.add('bg-green-200', 'border-green-500');
+            
+            if (!correct) {
+                selectedBtn.classList.remove('border-gray-300', 'hover:bg-gray-100', 'hover:border-indigo-400');
+                selectedBtn.classList.add('bg-red-200', 'border-red-500');
+            } else {
+                 // 正解の時のアニメーション
+                launchConfetti();
+            }
+
+            const explanationContent = document.getElementById('explanation-content');
+            explanationContent.innerHTML = `
+                <div class="mt-6 p-4 rounded-lg ${correct ? 'bg-green-100' : 'bg-red-100'} fade-in">
+                    <h3 class="text-xl font-bold ${correct ? 'text-green-800' : 'text-red-800'}">${correct ? praiseWords[Math.floor(Math.random() * praiseWords.length)] : '残念！正解はこちらです。'}</h3>
+                    <p class="mt-2 font-semibold">正解： ${quiz.options[quiz.answer]}</p>
+                    <p class="mt-2 text-gray-700">${quiz.explanation}</p>
+                </div>`;
+            
+            updateStats();
+            renderCalendar();
+        }
+
+        function launchConfetti() {
+            const container = document.querySelector('.confetti-container');
+            if (!container) return;
+            container.innerHTML = '';
+            const colors = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800'];
+            for (let i = 0; i < 50; i++) {
+                const confetti = document.createElement('div');
+                confetti.className = 'confetti';
+                confetti.style.left = `${Math.random() * 100}%`;
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.animationDelay = `${Math.random() * 2}s`;
+                confetti.style.transform = `rotate(${Math.random() * 360}deg)`;
+                container.appendChild(confetti);
+            }
+        }
+
+        function updateStats() {
+            const answeredDates = Object.keys(answers);
+            const total = answeredDates.length;
+            const correctCount = answeredDates.filter(date => answers[date].correct).length;
+            
+            stats.totalAnswered.textContent = total;
+            stats.correctCount.textContent = correctCount;
+            stats.totalAccuracy.textContent = total > 0 ? ((correctCount / total) * 100).toFixed(1) : '--';
+        }
+        
+        function renderCharts() {
+            const answeredQuizzes = quizData.filter(q => answers[q.date]);
+
+            // 分野別
+            const categoryData = answeredQuizzes.reduce((acc, q) => {
+                if (!acc[q.category]) {
+                    acc[q.category] = { total: 0, correct: 0 };
+                }
+                acc[q.category].total++;
+                if (answers[q.date].correct) {
+                    acc[q.category].correct++;
+                }
+                return acc;
+            }, {});
+
+            const categoryLabels = Object.keys(categoryData);
+            const categoryAccuracies = categoryLabels.map(cat => {
+                const data = categoryData[cat];
+                return data.total > 0 ? (data.correct / data.total) * 100 : 0;
+            });
+            
+            // 難易度別
+            const difficultyData = answeredQuizzes.reduce((acc, q) => {
+                if (!acc[q.difficulty]) {
+                    acc[q.difficulty] = { total: 0, correct: 0 };
+                }
+                acc[q.difficulty].total++;
+                if (answers[q.date].correct) {
+                    acc[q.difficulty].correct++;
+                }
+                return acc;
+            }, {});
+
+            const difficultyLabels = Object.keys(difficultyData).sort((a,b) => ['初級', '中級', '上級'].indexOf(a) - ['初級', '中級', '上級'].indexOf(b));
+            const difficultyAccuracies = difficultyLabels.map(diff => {
+                 const data = difficultyData[diff];
+                return data.total > 0 ? (data.correct / data.total) * 100 : 0;
+            });
+
+            const chartOptions = {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed !== null) {
+                                    label += context.parsed.toFixed(1) + '%';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            };
+            
+            if (categoryChart) categoryChart.destroy();
+            categoryChart = new Chart(document.getElementById('category-chart'), {
+                type: 'doughnut',
+                data: {
+                    labels: categoryLabels,
+                    datasets: [{
+                        label: '分野別正答率',
+                        data: categoryAccuracies,
+                         backgroundColor: ['#6366F1', '#818CF8', '#A5B4FC', '#C7D2FE', '#E0E7FF', '#4F46E5', '#312E81']
+                    }]
+                },
+                options: chartOptions
+            });
+
+            if (difficultyChart) difficultyChart.destroy();
+            difficultyChart = new Chart(document.getElementById('difficulty-chart'), {
+                type: 'doughnut',
+                data: {
+                    labels: difficultyLabels,
+                    datasets: [{
+                        label: '難易度別正答率',
+                        data: difficultyAccuracies,
+                        backgroundColor: ['#34D399', '#FBBF24', '#F87171']
+                    }]
+                },
+                options: chartOptions
+            });
+        }
+
+        // --- イベントリスナー ---
+        
+        prevMonthBtn.addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        });
+        
+        nextMonthBtn.addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        });
+
+        showChartBtn.addEventListener('click', () => {
+            renderCharts();
+            chartModal.classList.remove('hidden');
+            chartModal.classList.add('fade-in');
+        });
+        
+        closeChartModalBtn.addEventListener('click', () => {
+            chartModal.classList.add('hidden');
+        });
+        chartModal.addEventListener('click', (e) => {
+            if (e.target === chartModal) {
+                chartModal.classList.add('hidden');
+            }
+        });
+        
+        // --- 初期化 ---
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            renderCalendar();
+            updateStats();
+
+            // 今日の問題を表示
+            const todayStr = formatDate(today);
+            const todaysQuiz = quizData.find(q => q.date === todayStr);
+            if (todaysQuiz) {
+                showQuiz(todaysQuiz);
+            } else {
+                quizContainer.innerHTML = `<div class="text-center p-8 text-gray-500">本日のクイズはありません。<br>カレンダーから過去の日付を選んで挑戦してください。</div>`;
+            }
+        });
+    </script>
+</body>
+</html>
+
